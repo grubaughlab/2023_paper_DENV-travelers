@@ -1,0 +1,338 @@
+---
+title: "Final Plots for Dengue"
+author: "Toby Koch"
+date: "2023-07-11"
+output: pdf
+---
+
+LOAD IN DATA
+```{r setup, include=FALSE}
+rm(list = ls())
+
+source("scripts/header_code.R")
+source("scripts/functions.R")
+load("data_input/df_yr.RData")
+load("data_input/case_paho_yr.RData")
+
+```
+
+SOME ADDITIONAL DATA CLEANING
+
+```{r}
+df_yr_train = df_yr %>%
+  filter(Country %in% c("Puerto Rico", "Dominican Republic", "Jamaica")) %>%
+  mutate(country_mod = Country)
+
+df_yr_test = df_yr %>%
+  mutate(Cases = ifelse(Country %in% c("Cuba", "Haiti"),
+                         NA,
+                       Cases))
+
+```
+
+TRAVEL INCIDENCE SENSITIVITY ANALYSIS
+```{r}
+data <- df_yr_train  %>%
+  select(Cases, travel_incidence_dot, gdp_cat, year0, Pop)
+   
+
+# List of transformations to test
+trans <- seq(0.001,0.02, 0.001)
+
+#calculate the transformatins
+for (i in trans) {
+  col_name <- paste0("log_incidence_", i)
+
+  # Mutate new column
+  data <- data %>% 
+    mutate(!!col_name := log(travel_incidence_dot + i))
+}
+
+
+# Function to fit NB regression and get AIC score
+fit_and_get_aic <- function(data, formula) {
+  model <- glm.nb(formula, data = data)
+  return(AIC(model))
+}
+
+# List to store AIC scores
+aic_scores <- c()
+
+# Loop through each log-transformed variable and fit Poisson regression model
+for (i in seq_along(trans)) {
+  col_name <- paste0("log_incidence_", trans[i])
+  formula <- as.formula(paste("Cases ~", col_name, "+ gdp_cat + year0 + offset(log(Pop))"))
+  aic_score <- fit_and_get_aic(data, formula)
+  aic_scores[i] <- aic_score
+}
+
+aic_trans = data.frame(trans,aic_scores)
+
+plot(trans, aic_scores)
+
+
+data <- df_yr_train  %>%
+  select(Cases, travel_incidence_dot, gdp_cat, year0, Pop)
+   
+
+# List of transformations to test
+trans <- seq(0.001,0.03, 0.001)
+
+#calculate the transformatins
+for (i in trans) {
+  col_name <- paste0("log_incidence_", i)
+
+  # Mutate new column
+  data <- data %>% 
+    mutate(!!col_name := log(travel_incidence_dot + i))
+}
+
+
+# Function to fit NB regression and get AIC score
+fit_and_get_aic <- function(data, formula) {
+  model <- glm.nb(formula, data = data)
+  return(AIC(model))
+}
+
+# List to store AIC scores
+aic_scores <- c()
+
+# Loop through each log-transformed variable and fit Poisson regression model
+for (i in seq_along(trans)) {
+  col_name <- paste0("log_incidence_", trans[i])
+  formula <- as.formula(paste("Cases ~", col_name, "+ gdp_cat + year0 + offset(log(Pop))"))
+  aic_score <- fit_and_get_aic(data, formula)
+  aic_scores[i] <- aic_score
+}
+
+aic_trans = data.frame(trans,aic_scores)
+
+plot(trans, aic_scores)
+
+
+
+```
+
+
+```{r}
+modnb_yr_log_gdp2.2 = glm.nb(Cases ~ travel_incidence_dot_log + gdp_cat + year0 + offset(log(Pop)) , 
+               data = df_yr_train)
+
+mod_final = modnb_yr_log_gdp2.2
+
+
+#create df of estimates
+df_mod_final = tidy(mod_final, 
+                    conf.int = T, 
+                    exponentiate = T) %>%
+  mutate_if(is.numeric, ~round(.,2))
+
+#change the model output data frame text to be more readable for the final version
+df_mod_final = 
+  df_mod_final %>% 
+  rename("IRR" = "estimate") %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = case_when(term == "travel_incidence_dot_log" ~ "log(Travel Incidence)",
+                          term == "year0" ~ "Year",
+                          term == "gdp_catupper" ~ "GDP:Upper Income")
+          )
+
+write.csv(df_mod_final, "data_output/df_mod_estimates.csv")
+```
+
+
+CHANGE CASES FOR CUBA TO SYNDROMIC TO ACCOUNT FOR ENHANCED SURVEILLANCE EFFORTS
+```{r}
+df_yr = df_yr %>%
+  mutate(`Travel Cases` = if_else(!is.na(syndromic_cases),
+                                   syndromic_cases,
+                                   `Travel Cases`)) %>%
+  mutate(travel_incidence_dot = round(`Travel Cases`/pass_dot*100000,3)) %>%
+  mutate(travel_incidence_dot_log = log(travel_incidence_dot+0.02)) %>%
+  mutate(Cases = replace_na(Cases, 0)) %>%
+  mutate(Incidence = replace_na(Incidence, 0))
+```
+
+
+MAKE PREDICTIONS INTO INCIDENCE RATES AND SEPARATE 
+```{r}
+#Make predictions
+df_pred_mod_final = 
+  make_predictions(mod_final,df_yr) %>%
+  mutate(pred_inc = pred/Pop*100000,
+         pred_lwr_inc = pred_lwr/Pop*100000,
+         pred_upr_inc = pred_upr/Pop*100000) %>%
+  rename(`Local Incidence` = Incidence)
+```
+
+
+MANIPULATE FOR THE LEGEND
+```{r}
+t1 = df_pred_mod_final %>%
+  select(Country, Year, pred_inc) %>%
+  mutate(`Local Incidence` = "Predicted") %>%
+  rename(value = pred_inc)
+
+t2 = df_pred_mod_final %>%
+  select(Country, Year, `Local Incidence`) %>%
+  mutate(x = paste0(Country, " (Observed)")) %>%
+  rename(value = `Local Incidence`) %>%
+  rename(`Local Incidence` = x)
+
+df_plot_test = rbind(t1,t2) %>%
+           filter(Country %in% c("Cuba", "Haiti"))
+
+df_plot_tr = rbind(t1,t2) %>%
+         filter(Country %in% c("Puerto Rico", "Dominican Republic", "Jamaica"))
+
+rm(t1,t2)
+
+
+df_pred_mod_final_tr = df_pred_mod_final %>% 
+         filter(Country %in% c("Puerto Rico", "Dominican Republic", "Jamaica"))
+
+df_pred_mod_final_test = df_pred_mod_final %>% 
+         filter(Country %in% c("Cuba", "Haiti"))
+
+
+write.csv(df_pred_mod_final, "data_output/df_predictions_final.csv")
+```
+
+
+COMPARE PREDICTED INCIDENCE AND CASES WITH REPORTED CASES IN THE REGION AS A BOXPLOT
+```{r}
+#list of countries to remove that ever had a population under 1M
+t = case_paho_yr %>%
+  filter(Population < 1000000 | Country %in% c("United States of America", "Canada")) %>%
+  distinct(Country)
+
+inc_comp = case_paho_yr %>% 
+  left_join(df_pred_mod_final, by = c("Country", "Year")) %>%
+  select(Country, Year, Incidence, pred_inc, pred_lwr_inc, pred_upr_inc, 
+         Cases.x, Cases.y, pred, pred_lwr, pred_upr)  %>%
+  mutate(Type = if_else(is.na(pred_inc),
+                        "Observed", "Predicted"),
+         level = if_else(is.na(pred_inc), Incidence, pred_inc)) %>%
+  anti_join(t) #remove countries with less than 1M Pop
+  
+
+group_ordered <- with(inc_comp,                       # Order boxes by median
+                      reorder(Country,
+                              level,
+                              median))
+
+inc_comp = inc_comp %>%
+  mutate(Country = factor(Country, levels = levels(group_ordered))) %>%
+  select(-Incidence) %>%
+  rename(`Yearly Incidence (cases/pop*100k)` = level)
+
+# inc_comp2 = inc_comp %>%
+#   select(Country, Year, Incidence, pred_inc) %>%
+#   rename(Observed = Incidence,
+#          Predicted = pred_inc) %>%
+#   pivot_longer(cols = c(-Country, -Year), names_to = "Type", values_to = "Incidence (2022)") %>%
+#   mutate(Country = factor(Country, levels = level))
+
+
+# #flip the x and y axis
+ p_inc_comp = ggplot(inc_comp %>% filter(Year == 2022), aes(y = `Yearly Incidence (cases/pop*100k)`, x = Country, color = Type, fill = Type)) +
+   geom_col(position = "dodge", alpha = .5) +
+   scale_fill_manual(values = c("Observed" = obs_color,
+                                "Predicted" = pred_color)) +
+     scale_color_manual(values = c("Observed" = obs_color,
+                                   "Predicted" = pred_color)) +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+         axis.text.x = element_text(angle = 45, vjust = 1),
+         legend.title = element_blank(),
+        legend.position = "bottom")
+
+ p_inc_comp
+
+p_inc_comp3 = ggplot(inc_comp) +
+  geom_boxplot(aes(x = `Yearly Incidence (cases/pop*100k)`, y = Country,
+                   color = Type, fill = Type),
+               outlier.size = 3, alpha = .5) +
+  geom_text(x = 1400, y = "Cuba", label = "2022", color = obs_color, size = label_text) +
+  scale_fill_manual(values = c("Observed" = obs_color,
+                               "Predicted" = pred_color)) +
+  scale_color_manual(values = c("Observed" = obs_color,
+                                  "Predicted" = pred_color)) +
+  theme_classic() +
+  ggtitle("C") +
+  theme(axis.title.y = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 8),
+        plot.title = element_text(face = "bold"),
+        legend.title = element_blank(),
+        legend.position = "bottom") +
+  guides(label = NA,
+         color = guide_legend(override.aes = aes(shape = 15, size = 4)))
+
+p_inc_comp3
+
+```
+
+PLOT THE TIMESERIES
+```{r}
+#manipulate back to original with no country colors
+df_plot_tr = df_plot_tr %>%
+  mutate(`Local Incidence` = if_else(`Local Incidence` == "Predicted", 
+                                     `Local Incidence`, 
+                                     "Observed"))
+
+df_plot_test = df_plot_test %>%
+  mutate(`Local Incidence` = if_else(`Local Incidence` == "Predicted", 
+                                     `Local Incidence`, 
+                                     "Observed"))
+
+
+#Plot Timeseries removing the local cases for all countries
+ts_fun = function(df1, df2, ymax) {
+  ggplot() +
+    geom_line(data =df1, aes(x = Year, y = value, color = `Local Incidence`), size = 1) +
+    geom_ribbon(data = df2, aes(x = Year, y = pred_inc, ymin = pred_lwr_inc, ymax = pred_upr_inc, group = 1), fill = "darkred",alpha = 0.2) +
+    labs(color = "Local Incidence") +
+    coord_cartesian(ylim = c(0,ymax)) +
+    facet_wrap(~Country, ncol = 1, strip.position = "top") +
+    theme_classic() +
+    #scale_color_manual(values = c(country_colors3)) +
+    scale_color_manual(values = fig_colors) +
+    ylab("Incidence (cases/pop*100k)") +
+    theme(axis.title.x = element_blank(),
+          legend.position = "bottom",
+          legend.title = element_blank(),
+          axis.title = element_text(size = axis_title),
+          axis.text = element_text(size = axis_text),
+          strip.background = element_blank(),
+          strip.text = element_text(hjust = 0),
+          plot.title = element_text(size = title,
+                                    face = face)
+          ) #+
+   # guides(color=guide_legend(nrow=2,byrow=TRUE))
+}
+
+p_final_tr_ts = ts_fun(df1 = df_plot_tr, df2 = df_pred_mod_final_tr, ymax = 1000) + ggtitle("A") + theme(legend.position = "none")
+
+p_final_test_ts <- ts_fun(df1 = df_plot_test, df2 = df_pred_mod_final_test, ymax = 2000)  + ggtitle("B") 
+
+
+p_final_tr_ts/p_final_test_ts + plot_layout(guides = "collect")
+
+
+```
+
+FORMAT FINAL PLOT
+```{r}
+#p_final_est/p_final_scat/p_inc_comp|p_final_tr_ts/p_final_test_ts
+
+
+#p_final_est/p_final_scat|p_final_test_ts/p_inc_comp
+
+p_final_fig = p_final_tr_ts/p_final_test_ts|p_inc_comp3
+
+p_final_fig
+
+ggsave(plot = p_final_fig, filename = "figures/p_final_fig.svg", width = 8, height = 10, units = "in")
+ggsave(plot = p_final_fig, filename = "figures/p_final_fig.png", width = 8, height = 10, units = "in")
+```
