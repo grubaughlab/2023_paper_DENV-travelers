@@ -5120,7 +5120,7 @@
 	</siteModel>
 
 	<!-- Likelihood for tree given discrete trait data                           -->
-	<markovJumpsTreeLikelihood id="location.treeLikelihood" stateTagName="location.states" useUniformization="true" saveCompleteHistory="true" logCompleteHistory="true">
+	<ancestralTreeLikelihood id="location.treeLikelihood" stateTagName="location.states" useUniformization="true" saveCompleteHistory="true" logCompleteHistory="true">
 		<attributePatterns idref="location.pattern"/>
 		<treeModel idref="treeModel"/>
 		<siteModel idref="location.siteModel"/>
@@ -5136,18 +5136,7 @@
 			</frequencies>
 		</frequencyModel>
 		
-		<parameter id="location.count" value="
-		0.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 
-		1.0 0.0 1.0 1.0 0.0 1.0 1.0 1.0 1.0 1.0 
-		1.0 1.0 0.0 1.0 1.0 1.0 1.0 1.0 0.0 1.0 
-		1.0 1.0 1.0 0.0 1.0 1.0 1.0 1.0 1.0 1.0
-		1.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0 1.0 1.0 
-		1.0 1.0 1.0 1.0 0.0 0.0 1.0 1.0 1.0 1.0 
-		1.0 1.0 1.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0  
-		1.0 1.0 1.0 1.0 1.0 1.0 1.0 0.0 1.0 1.0 
-		1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 0.0 1.0
-		1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 0.0"/>
-	</markovJumpsTreeLikelihood>
+	</ancestralTreeLikelihood>
 	
 	
 	<!-- Define operators                                                        -->
@@ -5242,7 +5231,7 @@
 			<strictClockBranchRates idref="location.branchRates"/>
 
 			<!-- START Discrete Traits Model                                             -->
-			<markovJumpsTreeLikelihood idref="location.treeLikelihood"/>
+			<ancestralTreeLikelihood idref="location.treeLikelihood"/>
 
 			<!-- END Discrete Traits Model                                               -->
 			
@@ -5268,19 +5257,12 @@
 			<trait name="location.states" tag="location">
 				<markovJumpsTreeLikelihood idref="location.treeLikelihood"/>
 			</trait>
-			<trait name="location.count" tag="location.count">
-				<markovJumpsTreeLikelihood idref="location.treeLikelihood"/>
-			</trait>
+
 
 			<!-- END Ancestral state reconstruction                                      -->
 
 		</logTree>
 		
-			<!-- write complete history tree log to file                                 -->
-		<logTree logEvery="4500" nexusFormat="true" fileName="DENV3.location.history.trees" sortTranslationTable="true">
-			<treeModel idref="treeModel"/>
-			<markovJumpsTreeLikelihood idref="location.treeLikelihood"/>
-		</logTree>
 		
 	</mcmc>
 	
